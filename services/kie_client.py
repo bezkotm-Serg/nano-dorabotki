@@ -1,7 +1,8 @@
-import os
-import json
 import asyncio
-from typing import Dict, Any, Optional, List, Union
+import json
+import os
+from typing import Any
+
 import httpx
 
 
@@ -20,7 +21,7 @@ def _get_key() -> str:
     return key
 
 
-def _headers_json() -> Dict[str, str]:
+def _headers_json() -> dict[str, str]:
     return {
         "Authorization": f"Bearer {_get_key()}",
         "Content-Type": "application/json",
@@ -28,7 +29,7 @@ def _headers_json() -> Dict[str, str]:
     }
 
 
-def _get_defaults() -> Dict[str, Any]:
+def _get_defaults() -> dict[str, Any]:
     return {
         "model": os.getenv("KIE_MODEL", "google/nano-banana-edit"),
         "output_format": os.getenv("KIE_OUTPUT_FORMAT", "") or None,
@@ -39,11 +40,11 @@ def _get_defaults() -> Dict[str, Any]:
 
 async def create_task(
     *,
-    prompt: Optional[str],
-    image_url: Union[str, None] = None,
-    image_urls: Optional[List[str]] = None,
-    extra_input: Optional[Dict[str, Any]] = None,
-    callback_url: Optional[str] = None,
+    prompt: str | None,
+    image_url: str | None = None,
+    image_urls: list[str] | None = None,
+    extra_input: dict[str, Any] | None = None,
+    callback_url: str | None = None,
 ) -> str:
     """
     Backward-compatible:
@@ -53,7 +54,7 @@ async def create_task(
     base = _get_base()
     d = _get_defaults()
 
-    urls: List[str] = []
+    urls: list[str] = []
     if image_urls:
         urls = [u for u in image_urls if isinstance(u, str) and u.startswith("http")]
     elif image_url:
@@ -63,7 +64,7 @@ async def create_task(
     if not urls:
         raise KIEError("Нужен хотя бы один корректный URL изображения")
 
-    input_obj: Dict[str, Any] = {
+    input_obj: dict[str, Any] = {
         "prompt": (prompt or d["default_prompt"]).strip(),
         "image_urls": urls,  # многокадровый ввод
     }
@@ -74,13 +75,13 @@ async def create_task(
     if extra_input:
         input_obj.update(extra_input)
 
-    payload: Dict[str, Any] = {"model": d["model"], "input": input_obj}
+    payload: dict[str, Any] = {"model": d["model"], "input": input_obj}
     if callback_url:
         payload["callBackUrl"] = callback_url
 
     url_create = f"{base}/api/v1/jobs/createTask"
 
-    last_err: Optional[Exception] = None
+    last_err: Exception | None = None
     for attempt in range(3):
         try:
             async with httpx.AsyncClient(timeout=60) as client:
@@ -89,10 +90,14 @@ async def create_task(
                     raise KIEError(f"createTask [{r.status_code}]: {r.text}")
                 data = r.json()
                 if data.get("code") != 200:
-                    raise KIEError(f"createTask вернул ошибку: {json.dumps(data, ensure_ascii=False)}")
+                    raise KIEError(
+                        f"createTask вернул ошибку: {json.dumps(data, ensure_ascii=False)}"
+                    )
                 task_id = (data.get("data") or {}).get("taskId") or ""
                 if not task_id:
-                    raise KIEError(f"createTask: нет taskId в ответе: {json.dumps(data, ensure_ascii=False)}")
+                    raise KIEError(
+                        f"createTask: нет taskId в ответе: {json.dumps(data, ensure_ascii=False)}"
+                    )
                 return task_id
         except Exception as e:
             last_err = e
@@ -100,7 +105,7 @@ async def create_task(
     raise KIEError(f"Не удалось создать задачу после ретраев: {last_err}")
 
 
-async def poll_result(task_id: str, *, timeout: int = 600, interval: float = 3.0) -> Dict[str, Any]:
+async def poll_result(task_id: str, *, timeout: int = 600, interval: float = 3.0) -> dict[str, Any]:
     base = _get_base()
     url = f"{base}/api/v1/jobs/recordInfo"
     deadline = asyncio.get_event_loop().time() + timeout
@@ -108,13 +113,15 @@ async def poll_result(task_id: str, *, timeout: int = 600, interval: float = 3.0
 
     async with httpx.AsyncClient(timeout=30) as client:
         while True:
-            r = await client.get(url, headers={"Authorization": f"Bearer {_get_key()}"}, params={"taskId": task_id})
+            r = await client.get(
+                url, headers={"Authorization": f"Bearer {_get_key()}"}, params={"taskId": task_id}
+            )
             if r.status_code >= 400:
                 raise KIEError(f"recordInfo [{r.status_code}]: {r.text}")
             data = r.json()
             last = data
             if data.get("code") == 200:
-                d = (data.get("data") or {})
+                d = data.get("data") or {}
                 state = (d.get("state") or "").lower()
                 if state == "success":
                     return data
@@ -124,5 +131,7 @@ async def poll_result(task_id: str, *, timeout: int = 600, interval: float = 3.0
                     param_seen = d.get("param")
                     raise KIEError(f"KIE fail ({fail_code}): {fail_msg}. param={param_seen}")
             if asyncio.get_event_loop().time() > deadline:
-                raise KIEError(f"Таймаут ожидания результата: {json.dumps(last, ensure_ascii=False)}")
+                raise KIEError(
+                    f"Таймаут ожидания результата: {json.dumps(last, ensure_ascii=False)}"
+                )
             await asyncio.sleep(interval)

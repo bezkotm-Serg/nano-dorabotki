@@ -1,9 +1,9 @@
 import os
 from dataclasses import dataclass
-from typing import List, Set, Tuple
 
-def _parse_admins(env: str) -> Set[int]:
-    ids: Set[int] = set()
+
+def _parse_admins(env: str) -> set[int]:
+    ids: set[int] = set()
     for p in (env or "").replace(";", ",").split(","):
         p = p.strip()
         if not p:
@@ -14,8 +14,9 @@ def _parse_admins(env: str) -> Set[int]:
             pass
     return ids
 
-def _parse_buy_packs(env: str) -> List[Tuple[int, int]]:
-    res: List[Tuple[int, int]] = []
+
+def _parse_buy_packs(env: str) -> list[tuple[int, int]]:
+    res: list[tuple[int, int]] = []
     for item in (env or "").split(","):
         item = item.strip()
         if not item:
@@ -31,6 +32,7 @@ def _parse_buy_packs(env: str) -> List[Tuple[int, int]]:
             continue
     return res or [(30, 149), (120, 399), (350, 899)]
 
+
 @dataclass
 class Config:
     # базовые
@@ -39,7 +41,7 @@ class Config:
 
     # bot
     bot_token: str = ""
-    admin_ids: Set[int] = None
+    admin_ids: set[int] = None
 
     # поведение/промпты
     use_caption_as_prompt: bool = True
@@ -50,7 +52,7 @@ class Config:
 
     # платежи/кредиты
     welcome_credits: int = 5
-    buy_packs: List[Tuple[int, int]] = None
+    buy_packs: list[tuple[int, int]] = None
     currency: str = "RUB"
 
     # скрытое состояние (ENV прочитан?)
@@ -80,6 +82,7 @@ class Config:
         self.currency = os.getenv("CURRENCY", "RUB")
 
         self._loaded = True
+
 
 cfg = Config()
 # Важно: main вызывает cfg.reload() после load_dotenv()

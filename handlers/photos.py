@@ -1,25 +1,27 @@
 import asyncio
 import logging
-from typing import List, Tuple, Dict
 
-from aiogram import Router, F
+from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, FSInputFile, Message
 
+from handlers.common import (
+    GLOBAL_LAST_PHOTO,  # общий кэш последнего фото
+    _chunk_scenes,
+    _clip,
+)
 from services.presets import build_presets
-from utils.config import cfg
-from utils.keyboards import scenes_keyboard
+from services.video_pipeline import run_kie_from_telegram_file, run_kie_from_telegram_files
 from storage.credits import get_balance, spend_credits
 from storage.files import TEMP_DIR
-from services.video_pipeline import run_kie_from_telegram_file, run_kie_from_telegram_files
-from handlers.common import GLOBAL_LAST_PHOTO  # общий кэш последнего фото
-from handlers.common import _clip, _chunk_scenes
+from utils.config import cfg
 
 router = Router()
 log = logging.getLogger("photos")
 
 # Кэш для альбомов: media_group_id -> list[file_path]
-_ALBUM_CACHE: Dict[str, List[str]] = {}
+_ALBUM_CACHE: dict[str, list[str]] = {}
+
 
 @router.message(F.photo & F.media_group_id.as_("gid"))
 async def handle_album_part(message: Message, gid: str):
@@ -34,6 +36,7 @@ async def handle_album_part(message: Message, gid: str):
 
         # Первый элемент — планируем обработку через ~1 секунду
         if len(_ALBUM_CACHE[gid]) == 1:
+
             async def _flush_after_delay():
                 await asyncio.sleep(1.2)  # простая эвристика завершения группы
                 paths = _ALBUM_CACHE.pop(gid, [])
@@ -45,21 +48,28 @@ async def handle_album_part(message: Message, gid: str):
                     return
                 try:
                     out_path = await run_kie_from_telegram_files(
-                        bot_token=cfg.bot_token, tg_file_paths=paths, out_dir=TEMP_DIR,
-                        prompt=(message.caption or "").strip() or None
+                        bot_token=cfg.bot_token,
+                        tg_file_paths=paths,
+                        out_dir=TEMP_DIR,
+                        prompt=(message.caption or "").strip() or None,
                     )
                     await message.answer_photo(
                         photo=FSInputFile(str(out_path)),
-                        caption=("Готово ✅\nальбом + промпт: " + _clip((message.caption or ""), 200))
-                        if cfg.show_prompt_in_caption and message.caption else "Готово ✅"
+                        caption=(
+                            ("Готово ✅\nальбом + промпт: " + _clip((message.caption or ""), 200))
+                            if cfg.show_prompt_in_caption and message.caption
+                            else "Готово ✅"
+                        ),
                     )
                     spend_credits(user_id, 1)  # 1 задача = 1 кредит
                 except Exception as e:
                     log.exception("Album failed: %s", e)
                     await message.answer(f"Ошибка генерации по альбому: {e}")
+
             asyncio.create_task(_flush_after_delay())
     except Exception as e:
         log.exception("Album collect error: %s", e)
+
 
 @router.callback_query(F.data.startswith("scene:"))
 async def on_scene_choice(callback: CallbackQuery):
@@ -93,7 +103,9 @@ async def on_scene_choice(callback: CallbackQuery):
         total_needed = 3 * len(chosen)
         bal = get_balance(user_id)
         if bal < total_needed:
-            await callback.message.edit_text(f"Нужно {total_needed} кредитов, у тебя {bal}. Нажми /buy, чтобы пополнить.")
+            await callback.message.edit_text(
+                f"Нужно {total_needed} кредитов, у тебя {bal}. Нажми /buy, чтобы пополнить."
+            )
             return
 
         try:
@@ -107,10 +119,19 @@ async def on_scene_choice(callback: CallbackQuery):
             for scene, shot, ptxt in triplet:
                 try:
                     out_path = await run_kie_from_telegram_file(
-                        bot_token=cfg.bot_token, tg_file_path=tg_file_path, out_dir=TEMP_DIR, prompt=ptxt
+                        bot_token=cfg.bot_token,
+                        tg_file_path=tg_file_path,
+                        out_dir=TEMP_DIR,
+                        prompt=ptxt,
                     )
-                    cap = f"{scene} • {shot}\n{_clip(ptxt, 300)}" if cfg.show_prompt_in_caption else f"{scene} • {shot}"
-                    await callback.message.answer_photo(photo=FSInputFile(str(out_path)), caption=cap)
+                    cap = (
+                        f"{scene} • {shot}\n{_clip(ptxt, 300)}"
+                        if cfg.show_prompt_in_caption
+                        else f"{scene} • {shot}"
+                    )
+                    await callback.message.answer_photo(
+                        photo=FSInputFile(str(out_path)), caption=cap
+                    )
                     spend_credits(user_id, 1)
                     sent += 1
                 except Exception as e:
@@ -122,7 +143,9 @@ async def on_scene_choice(callback: CallbackQuery):
         if sent == 0:
             await callback.message.answer("Не удалось сгенерировать ни один вариант.")
         else:
-            await callback.message.answer(f"Готово ✅ Отправлено: {sent}. Баланс: {get_balance(user_id)}")
+            await callback.message.answer(
+                f"Готово ✅ Отправлено: {sent}. Баланс: {get_balance(user_id)}"
+            )
 
     except Exception as e:
         log.exception("Ошибка меню: %s", e)

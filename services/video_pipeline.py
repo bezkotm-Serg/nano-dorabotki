@@ -3,13 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import List, Optional
 
 import httpx
 
+from services.kie_client import KIEError, create_task, poll_result
+
 # why: TNB функции требуются handlers/common.py при FEATURE=VARIATION/ALT_VIEWS
 from services.the_new_black_client import create_alternative_views, create_variation
-from services.kie_client import KIEError, create_task, poll_result
 
 
 def build_telegram_file_url(bot_token: str, file_path: str) -> str:
@@ -46,7 +46,7 @@ async def run_variation_from_telegram_file(
     bot_token: str,
     tg_file_path: str,
     out_dir: Path,
-    prompt: Optional[str] = None,
+    prompt: str | None = None,
 ) -> Path:
     """Generate single-image variation via TNB."""
     image_url = build_telegram_file_url(bot_token, tg_file_path)
@@ -63,7 +63,7 @@ async def run_altviews_from_telegram_file(
     bot_token: str,
     tg_file_path: str,
     out_dir: Path,
-    prompt: Optional[str] = None,
+    prompt: str | None = None,
 ) -> Path:
     """Generate alternative views via TNB."""
     image_url = build_telegram_file_url(bot_token, tg_file_path)
@@ -92,8 +92,8 @@ async def run_kie_from_telegram_file(
     bot_token: str,
     tg_file_path: str,
     out_dir: Path,
-    prompt: Optional[str] = None,
-    extra_input: Optional[dict] = None,
+    prompt: str | None = None,
+    extra_input: dict | None = None,
 ) -> Path:
     """KIE single-image edit."""
     image_url = build_telegram_file_url(bot_token, tg_file_path)
@@ -122,10 +122,10 @@ async def run_kie_from_telegram_file(
 async def run_kie_from_telegram_files(
     *,
     bot_token: str,
-    tg_file_paths: List[str],
+    tg_file_paths: list[str],
     out_dir: Path,
-    prompt: Optional[str] = None,
-    extra_input: Optional[dict] = None,
+    prompt: str | None = None,
+    extra_input: dict | None = None,
 ) -> Path:
     """KIE multi-image edit (up to 10 input images in one task)."""
     if not tg_file_paths:

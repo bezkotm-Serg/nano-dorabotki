@@ -1,24 +1,27 @@
 # path: handlers/common.py
-from pathlib import Path
 import logging
-from typing import List, Tuple
+from pathlib import Path
 
-from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram import F, Router
+from aiogram.types import CallbackQuery, FSInputFile, Message
 
+from services.payments_yookassa import create_payment, get_payment_status, is_enabled as yk_enabled
 from services.presets import build_presets
 from services.video_pipeline import (
-    run_mock_pipeline,
     run_kie_from_telegram_file,  # KIE нужен всегда
+    run_mock_pipeline,
+)
+from storage.credits import (
+    add_credits,
+    ensure_user,
+    get_balance,
+    mark_payment_applied,
+    register_payment,
+    set_payment_status,
 )
 from storage.files import TEMP_DIR, ensure_dirs
-from storage.credits import (
-    ensure_user, get_balance, add_credits,
-    register_payment, set_payment_status, mark_payment_applied,
-)
-from services.payments_yookassa import create_payment, get_payment_status, is_enabled as yk_enabled
 from utils.config import cfg
-from utils.keyboards import main_menu_kb, buy_keyboard, scenes_keyboard
+from utils.keyboards import buy_keyboard, main_menu_kb, scenes_keyboard
 
 log = logging.getLogger("common")
 router = Router()
@@ -30,8 +33,8 @@ def _clip(text: str, limit: int = 220) -> str:
     return t if len(t) <= limit else t[: limit - 1] + "…"
 
 
-def _chunk_scenes(presets: List[Tuple[str, str, str]]) -> List[List[Tuple[str, str, str]]]:
-    return [presets[i:i + 3] for i in range(0, len(presets), 3)]
+def _chunk_scenes(presets: list[tuple[str, str, str]]) -> list[list[tuple[str, str, str]]]:
+    return [presets[i : i + 3] for i in range(0, len(presets), 3)]
 
 
 @router.message(F.text == "/start")
@@ -45,7 +48,8 @@ async def cmd_start(message: Message):
     )
     bonus = (
         f"\n\n🎁 Новым пользователям начисляем {cfg.welcome_credits} бонусных кредитов."
-        if is_new and cfg.welcome_credits > 0 else ""
+        if is_new and cfg.welcome_credits > 0
+        else ""
     )
     tail = f"\n\nТвой баланс: {balance} кредитов."
     await message.answer(welcome + bonus + tail, reply_markup=main_menu_kb())
@@ -89,7 +93,9 @@ async def cmd_ykdiag(message: Message):
         return
     try:
         pid, url = create_payment(message.from_user.id, credits=1, amount_rub=1)
-        await message.answer(f"YooKassa OK. payment_id: {pid}\nurl: {url}\n(тест, можно не оплачивать)")
+        await message.answer(
+            f"YooKassa OK. payment_id: {pid}\nurl: {url}\n(тест, можно не оплачивать)"
+        )
     except Exception as e:
         log.exception("YK diag failed: %s", e)
         await message.answer(f"YooKassa ERROR: {str(e)[:900]}")
@@ -105,7 +111,9 @@ async def menu_balance(callback: CallbackQuery):
 async def menu_buy(callback: CallbackQuery):
     await callback.answer()
     if not yk_enabled():
-        await callback.message.answer("Оплата недоступна: не настроены YK_SHOP_ID / YK_SECRET в .env")
+        await callback.message.answer(
+            "Оплата недоступна: не настроены YK_SHOP_ID / YK_SECRET в .env"
+        )
         return
     await callback.message.answer("Выбери пакет кредитов:", reply_markup=buy_keyboard())
 
@@ -129,14 +137,17 @@ async def on_buy_pack(callback: CallbackQuery):
         return
 
     register_payment(pid, callback.from_user.id, credits, rub * 100, cfg.currency)
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Оплатить", url=url)],
-        [InlineKeyboardButton(text="Проверить оплату", callback_data=f"buy:check:{pid}")]
-    ])
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Оплатить", url=url)],
+            [InlineKeyboardButton(text="Проверить оплату", callback_data=f"buy:check:{pid}")],
+        ]
+    )
     await callback.message.answer(
         f"Пакет: {credits} кредитов за {rub}₽.\nПосле оплаты нажми «Проверить оплату».",
-        reply_markup=kb
+        reply_markup=kb,
     )
     await callback.answer()
 
@@ -163,7 +174,9 @@ async def on_buy_check(callback: CallbackQuery):
         else:
             await callback.message.answer("Этот платёж уже применён ✅")
     elif status == "pending":
-        await callback.message.answer("Платёж ещё не завершён. Заверши оплату и нажми «Проверить оплату».")
+        await callback.message.answer(
+            "Платёж ещё не завершён. Заверши оплату и нажми «Проверить оплату»."
+        )
     elif status == "canceled":
         set_payment_status(pid, "canceled")
         await callback.message.answer("Платёж отменён.")
@@ -195,19 +208,29 @@ async def handle_photo(message: Message):
                 await message.answer("Не хватает кредитов. Команда /buy — пополнить.")
                 return
             from services.video_pipeline import (
-                run_variation_from_telegram_file,
                 run_altviews_from_telegram_file,
+                run_variation_from_telegram_file,
             )
+
             prompt = caption if (cfg.use_caption_as_prompt and caption) else cfg.tnb_default_prompt
-            runner = run_variation_from_telegram_file if cfg.feature == "VARIATION" else run_altviews_from_telegram_file
+            runner = (
+                run_variation_from_telegram_file
+                if cfg.feature == "VARIATION"
+                else run_altviews_from_telegram_file
+            )
             out_path = await runner(
                 bot_token=cfg.bot_token, tg_file_path=tg_file_path, out_dir=TEMP_DIR, prompt=prompt
             )
             await message.answer_photo(
                 photo=FSInputFile(str(out_path)),
-                caption=(f"Готово ✅\nprompt: {_clip(prompt)}" if cfg.show_prompt_in_caption else "Готово ✅")
+                caption=(
+                    f"Готово ✅\nprompt: {_clip(prompt)}"
+                    if cfg.show_prompt_in_caption
+                    else "Готово ✅"
+                ),
             )
             from storage.credits import spend_credits
+
             spend_credits(user_id, 1)
             return
 
@@ -215,29 +238,39 @@ async def handle_photo(message: Message):
         if cfg.feature == "KIE_IMAGE":
             if caption and cfg.use_caption_as_prompt:
                 from storage.credits import spend_credits
+
                 if get_balance(user_id) < 1:
                     await message.answer("Нужен 1 кредит для генерации. /buy — пополнить.")
                     return
                 out_path = await run_kie_from_telegram_file(
-                    bot_token=cfg.bot_token, tg_file_path=tg_file_path, out_dir=TEMP_DIR, prompt=caption
+                    bot_token=cfg.bot_token,
+                    tg_file_path=tg_file_path,
+                    out_dir=TEMP_DIR,
+                    prompt=caption,
                 )
                 await message.answer_photo(
                     photo=FSInputFile(str(out_path)),
-                    caption=(f"Готово ✅\nprompt: {_clip(caption)}" if cfg.show_prompt_in_caption else "Готово ✅")
+                    caption=(
+                        f"Готово ✅\nprompt: {_clip(caption)}"
+                        if cfg.show_prompt_in_caption
+                        else "Готово ✅"
+                    ),
                 )
                 spend_credits(user_id, 1)
                 return
 
-            presets: List[Tuple[str, str, str]] = build_presets()
+            presets: list[tuple[str, str, str]] = build_presets()
             scenes = _chunk_scenes(presets)
             GLOBAL_LAST_PHOTO[user_id] = tg_file_path
             await message.answer(
                 "Выбери группу сцен для генерации (каждая сцена содержит 3 ракурса):",
-                reply_markup=scenes_keyboard(scenes)
+                reply_markup=scenes_keyboard(scenes),
             )
             return
 
-        await message.answer("Неизвестная фича. Укажи TNB_FEATURE=VARIATION / ALT_VIEWS / KIE_IMAGE в .env")
+        await message.answer(
+            "Неизвестная фича. Укажи TNB_FEATURE=VARIATION / ALT_VIEWS / KIE_IMAGE в .env"
+        )
 
     except Exception as e:
         log.exception("Ошибка при обработке фото: %s", e)

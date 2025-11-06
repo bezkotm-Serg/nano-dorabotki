@@ -1,18 +1,21 @@
-from aiogram import Router, F
+from aiogram import F, Router
 from aiogram.types import Message
 
-from storage.credits import ensure_user, add_credits, get_balance
+from storage.credits import add_credits, ensure_user, get_balance
 from utils.config import cfg
 
 router = Router()
 
+
 def _is_admin(uid: int) -> bool:
     return uid in cfg.admin_ids
+
 
 @router.message(F.text == "/whoami")
 async def cmd_whoami(message: Message):
     uid = message.from_user.id
     await message.answer(f"Ваш user_id: {uid}\nСтатус: {'admin' if _is_admin(uid) else 'user'}")
+
 
 @router.message(F.text == "/reload_admins")
 async def cmd_reload_admins(message: Message):
@@ -20,8 +23,16 @@ async def cmd_reload_admins(message: Message):
         await message.answer("Команда доступна только администраторам.")
         return
     import os
-    cfg.admin_ids = {int(x) for x in os.getenv("ADMIN_IDS", "").replace(";", ",").split(",") if x.strip().isdigit()}
-    await message.answer(f"ADMIN_IDS перезагружены: {', '.join(map(str, sorted(cfg.admin_ids))) or 'пусто'}")
+
+    cfg.admin_ids = {
+        int(x)
+        for x in os.getenv("ADMIN_IDS", "").replace(";", ",").split(",")
+        if x.strip().isdigit()
+    }
+    await message.answer(
+        f"ADMIN_IDS перезагружены: {', '.join(map(str, sorted(cfg.admin_ids))) or 'пусто'}"
+    )
+
 
 @router.message(F.text.regexp(r"^/grant(\s+.*)?$"))
 async def cmd_grant(message: Message):
@@ -57,4 +68,6 @@ async def cmd_grant(message: Message):
 
     ensure_user(target_id, 0)
     add_credits(target_id, amount, reason=f"admin:{admin_id}")
-    await message.answer(f"Начислено {amount} кредитов пользователю {target_id}. Баланс: {get_balance(target_id)}.")
+    await message.answer(
+        f"Начислено {amount} кредитов пользователю {target_id}. Баланс: {get_balance(target_id)}."
+    )

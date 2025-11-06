@@ -6,11 +6,11 @@ from pathlib import Path
 from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
 
+from handlers.admin import router as admin_router
+from handlers.common import router as common_router
+from handlers.photos import router as photos_router
 from storage.credits import init_db
 from utils.config import cfg
-from handlers.common import router as common_router
-from handlers.admin import router as admin_router
-from handlers.photos import router as photos_router
 
 # ── Логи
 Path("logs").mkdir(parents=True, exist_ok=True)
@@ -21,9 +21,11 @@ logging.basicConfig(
 )
 log = logging.getLogger("bot")
 
+
 def _load_env() -> None:
     # why: централизуем загрузку .env из корня
     load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=True)
+
 
 async def main() -> None:
     _load_env()
@@ -43,6 +45,7 @@ async def main() -> None:
 
     log.info("Бот запущен. MODE=%s FEATURE=%s", cfg.mode, cfg.feature)
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     try:

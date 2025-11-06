@@ -1,20 +1,24 @@
 # path: services/payments_yookassa.py
 import os
-from typing import Tuple, Dict, Any
+from typing import Any
+
 from yookassa import Configuration, Payment
 from yookassa.domain.exceptions.api_error import ApiError
 
-def _env() -> Dict[str, str]:
+
+def _env() -> dict[str, str]:
     return {
         "shop_id": os.getenv("YK_SHOP_ID", "").strip(),
-        "secret":  os.getenv("YK_SECRET", "").strip(),
+        "secret": os.getenv("YK_SECRET", "").strip(),
         "currency": os.getenv("CURRENCY", "RUB").strip(),
         "vat_code": os.getenv("RECEIPT_VAT_CODE", "1").strip(),  # 1 = без НДС по умолчанию
     }
 
+
 def is_enabled() -> bool:
     e = _env()
     return bool(e["shop_id"] and e["secret"])
+
 
 def _configure():
     e = _env()
@@ -24,7 +28,8 @@ def _configure():
     Configuration.secret_key = e["secret"]
     return e
 
-def _build_receipt(amount_value: str, cfg: Dict[str, str], user_id: int) -> Dict[str, Any]:
+
+def _build_receipt(amount_value: str, cfg: dict[str, str], user_id: int) -> dict[str, Any]:
     """
     Минимальный корректный чек для цифровых услуг:
     - payment_subject='service'
@@ -36,17 +41,20 @@ def _build_receipt(amount_value: str, cfg: Dict[str, str], user_id: int) -> Dict
             "full_name": f"tg-{user_id}",
             "email": "no-reply@example.com",  # хотя бы email или phone обязателен
         },
-        "items": [{
-            "description": "Credits pack",
-            "quantity": "1.0",
-            "amount": {"value": amount_value, "currency": cfg["currency"]},
-            "vat_code": int(cfg["vat_code"]),
-            "payment_subject": "service",
-            "payment_mode": "full_prepayment",
-        }]
+        "items": [
+            {
+                "description": "Credits pack",
+                "quantity": "1.0",
+                "amount": {"value": amount_value, "currency": cfg["currency"]},
+                "vat_code": int(cfg["vat_code"]),
+                "payment_subject": "service",
+                "payment_mode": "full_prepayment",
+            }
+        ],
     }
 
-def create_payment(user_id: int, credits: int, amount_rub: int) -> Tuple[str, str]:
+
+def create_payment(user_id: int, credits: int, amount_rub: int) -> tuple[str, str]:
     """Создаёт платёж. Возвращает (payment_id, confirmation_url)."""
     cfg = _configure()
     amount_value = f"{float(amount_rub):.2f}"
@@ -68,6 +76,7 @@ def create_payment(user_id: int, credits: int, amount_rub: int) -> Tuple[str, st
         raise RuntimeError(f"{code}: {message} | details={details}") from e
     except Exception as e:
         raise RuntimeError(f"transport_error: {e!s}") from e
+
 
 def get_payment_status(payment_id: str) -> str:
     _configure()
