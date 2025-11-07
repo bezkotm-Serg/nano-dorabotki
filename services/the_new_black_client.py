@@ -1,8 +1,9 @@
 import os
+from typing import Final
 
 import httpx
 
-API_BASE = "https://thenewblack.ai/api/1.1/wf"
+API_BASE: Final[str] = "https://thenewblack.ai/api/1.1/wf"
 
 
 class TNBError(RuntimeError):

@@ -1,5 +1,9 @@
 import os
 from dataclasses import dataclass
+from typing import Final
+
+
+DEFAULT_BUY_PACKS: Final[list[tuple[int, int]]] = [(30, 149), (120, 399), (350, 899)]
 
 
 def _parse_admins(env: str) -> set[int]:
@@ -30,7 +34,7 @@ def _parse_buy_packs(env: str) -> list[tuple[int, int]]:
                 res.append((c, r))
         except ValueError:
             continue
-    return res or [(30, 149), (120, 399), (350, 899)]
+    return res or DEFAULT_BUY_PACKS
 
 
 @dataclass
