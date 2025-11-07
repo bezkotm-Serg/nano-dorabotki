@@ -1,18 +1,44 @@
-﻿# Python
+﻿# === Python базовое ===
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
 .Python
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+*.coverage
+
+# === Виртуалки и IDE ===
+.venv/
+venv/
+.idea/
+.vscode/
+
+# === Секреты/переменные окружения ===
 .env
 .env.*
 *.env
-# venv
-venv/
-.venv/
-# Tools
-.idea/
-.vscode/
-# Outputs
-temp/
+
+# === Логи и временные ===
 logs/
+*.log
+temp/
+tmp/
+*.tmp
+*.bak
+
+# === Данные/БД (НЕ храним в гите) ===
+storage/*.sqlite3
+storage/*.sqlite
+storage/*.db
+storage/tmp/
+
+# Оставить папку storage в репо, но без содержимого:
+!storage/.gitkeep
+
+# === Сборки/артефакты (на всякий) ===
+dist/
+build/
